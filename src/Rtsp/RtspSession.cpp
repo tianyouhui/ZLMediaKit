@@ -64,10 +64,10 @@ RtspSession::~RtspSession() {
 void RtspSession::onError(const SockException &err) {
     bool is_player = !_push_src_ownership;
     uint64_t duration = _alive_ticker.createdTime() / 1000;
-    WarnP(this) << (is_player ? "RTSP播放器(" : "RTSP推流器(")
+    WarnP(this) << (is_player ? "RTSP player(" : "RTSP pusher(")
                 << _media_info.shortUrl()
-                << ")断开:" << err.what()
-                << ",耗时(s):" << duration;
+                << ") disconnect:" << err.what()
+                << ", cost(s):" << duration;
 
     if (_rtp_type == Rtsp::RTP_MULTICAST) {
         //取消UDP端口监听
@@ -213,7 +213,7 @@ void RtspSession::handleReq_ANNOUNCE(const Parser &parser) {
 
     if (_media_info._app.empty() || _media_info._streamid.empty()) {
         //推流rtsp url必须最少两级(rtsp://host/app/stream_id)，不允许莫名其妙的推流url
-        static constexpr auto err = "rtsp推流url非法,最少确保两级rtsp url";
+        static constexpr auto err = "rtsp push url illegal, at least 2 levels of rtsp url";
         sendRtspResponse("403 Forbidden", {"Content-Type", "text/plain"}, err);
         throw SockException(Err_shutdown, StrPrinter << err << ":" << full_url);
     }
@@ -258,7 +258,7 @@ void RtspSession::handleReq_ANNOUNCE(const Parser &parser) {
         _sdp_track = sdpParser.getAvailableTrack();
         if (_sdp_track.empty()) {
             // sdp无效
-            static constexpr auto err = "sdp中无有效track";
+            static constexpr auto err = "sdp contains invalid track";
             sendRtspResponse("403 Forbidden", { "Content-Type", "text/plain" }, err);
             shutdown(SockException(Err_shutdown, StrPrinter << err << ":" << full_url));
             return;
@@ -424,7 +424,7 @@ void RtspSession::onAuthSuccess() {
         strong_self->_sdp_track = SdpParser(rtsp_src->getSdp()).getAvailableTrack();
         if (strong_self->_sdp_track.empty()) {
             //该流无效
-            WarnL << "sdp中无有效track，该流无效:" << rtsp_src->getSdp();
+            WarnL << "sdp contains invalid track，the streamer is invalid" << rtsp_src->getSdp();
             strong_self->send_StreamNotFound();
             strong_self->shutdown(SockException(Err_shutdown,"can not find any available track in sdp"));
             return;
@@ -503,7 +503,7 @@ void RtspSession::onAuthBasic(const string &realm, const string &auth_base64) {
     //此时必须提供明文密码
     if (!NoticeCenter::Instance().emitEvent(Broadcast::kBroadcastOnRtspAuth, _media_info, realm, user, true, invoker, static_cast<SockInfo &>(*this))) {
         //表明该流需要认证却没监听请求密码事件，这一般是大意的程序所为，警告之
-        WarnP(this) << "请监听kBroadcastOnRtspAuth事件！";
+        WarnP(this) << "should listen kBroadcastOnRtspAuth!";
         //但是我们还是忽略认证以便完成播放
         //我们输入的密码是明文
         invoker(false, pwd);
@@ -587,7 +587,7 @@ void RtspSession::onAuthDigest(const string &realm,const string &auth_md5){
     //此时可以提供明文或md5加密的密码
     if(!NoticeCenter::Instance().emitEvent(Broadcast::kBroadcastOnRtspAuth, _media_info, realm, username, false, invoker, static_cast<SockInfo &>(*this))){
         //表明该流需要认证却没监听请求密码事件，这一般是大意的程序所为，警告之
-        WarnP(this) << "请监听kBroadcastOnRtspAuth事件！";
+        WarnP(this) << "should listen kBroadcastOnRtspAuth!";
         //但是我们还是忽略认证以便完成播放
         realInvoker(true,true,"");
     }
@@ -825,7 +825,7 @@ void RtspSession::handleReq_Play(const Parser &parser) {
     //设置播放track
     if (inited_tracks.size() == 1) {
         _target_play_track = inited_tracks[0];
-        InfoP(this) << "指定播放track:" << _target_play_track;
+        InfoP(this) << "set point track:" << _target_play_track;
     }
 
     //在回复rtsp信令后再恢复播放
@@ -986,7 +986,7 @@ void RtspSession::startListenPeerUdpData(int track_idx) {
         }
 
         if (SockUtil::inet_ntoa(peer_addr) != peer_ip) {
-            WarnP(strong_self.get()) << ((interleaved % 2 == 0) ? "收到其他地址的rtp数据:" : "收到其他地址的rtcp数据:")
+            WarnP(strong_self.get()) << ((interleaved % 2 == 0) ? "received other url of rtp data:" : "received other url of rtcp data:")
                                     << SockUtil::inet_ntoa(peer_addr);
             return true;
         }
@@ -1020,7 +1020,7 @@ void RtspSession::startListenPeerUdpData(int track_idx) {
         case Rtsp::RTP_UDP:{
             auto setEvent = [&](Socket::Ptr &sock,int interleaved){
                 if(!sock){
-                    WarnP(this) << "udp端口为空:" << interleaved;
+                    WarnP(this) << "udp port is empty:" << interleaved;
                     return;
                 }
                 sock->setOnRead([onUdpData,interleaved](const Buffer::Ptr &pBuf, struct sockaddr *pPeerAddr , int addr_len){
